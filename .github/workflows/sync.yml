@@ -58,17 +58,50 @@ jobs:
 
       - name: Elegir el trabajo según el disparador
         id: plan
+        # Las entradas viajan por el entorno, no interpoladas en el guion.
+        # `${{ }}` sustituye texto antes de que exista el shell, así que un
+        # valor con comillas o punto y coma se ejecutaría como comando.
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          IN_JOB: ${{ inputs.job }}
+          IN_START: ${{ inputs.start }}
+          IN_END: ${{ inputs.end }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "job=${{ inputs.job }}" >> "$GITHUB_OUTPUT"
-            echo "args=${{ inputs.start && format('--start {0}', inputs.start) || '' }} ${{ inputs.end && format('--end {0}', inputs.end) || '' }}" >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            job="$IN_JOB"
+            start="$IN_START"
+            end="$IN_END"
+            days=""
           else
-            case "${{ github.event.schedule }}" in
-              '23 */6 * * *') echo "job=recent" >> "$GITHUB_OUTPUT"; echo "args=--days 7" >> "$GITHUB_OUTPUT" ;;
-              '41 9 * * 1')   echo "job=audit"  >> "$GITHUB_OUTPUT"; echo "args=" >> "$GITHUB_OUTPUT" ;;
-              *)              echo "job=today"  >> "$GITHUB_OUTPUT"; echo "args=" >> "$GITHUB_OUTPUT" ;;
+            start=""; end=""; days=""
+            case "$SCHEDULE" in
+              '23 */6 * * *') job="recent"; days="7" ;;
+              '41 9 * * 1')   job="audit" ;;
+              *)              job="today" ;;
             esac
           fi
+
+          # Las fechas se validan aquí y no más adelante: un rango mal escrito
+          # debe detener el trabajo antes de tocar la fuente.
+          for value in "$start" "$end"; do
+            if [ -n "$value" ] && ! printf '%s' "$value" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+              echo "::error::La fecha '$value' no tiene el formato YYYY-MM-DD."
+              exit 1
+            fi
+          done
+          case "$job" in
+            today|recent|backfill|audit) ;;
+            *) echo "::error::Trabajo desconocido: '$job'."; exit 1 ;;
+          esac
+
+          {
+            echo "job=$job"
+            echo "start=$start"
+            echo "end=$end"
+            echo "days=$days"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Pruebas del recolector
         # Si la lógica está rota, es preferible no publicar nada que publicar
@@ -81,9 +114,18 @@ jobs:
           ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
           ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
           ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+          JOB: ${{ steps.plan.outputs.job }}
+          START: ${{ steps.plan.outputs.start }}
+          END: ${{ steps.plan.outputs.end }}
+          DAYS: ${{ steps.plan.outputs.days }}
         run: |
+          argumentos=()
+          [ -n "$START" ] && argumentos+=(--start "$START")
+          [ -n "$END" ] && argumentos+=(--end "$END")
+          [ -n "$DAYS" ] && argumentos+=(--days "$DAYS")
+
           set +e
-          python3 run_sync.py ${{ steps.plan.outputs.job }} ${{ steps.plan.outputs.args }}
+          python3 run_sync.py "$JOB" "${argumentos[@]}"
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit $code
