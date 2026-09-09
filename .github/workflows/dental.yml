@@ -1,0 +1,135 @@
+# Sincronización autónoma de Dental Amigo.
+#
+# Corre en la infraestructura de GitHub, no en la computadora de nadie.
+#
+# Este flujo NO toca Flujos DA: esa fuente ya llega sola desde un Apps Script
+# del propio libro de cálculo, de lunes a sábado alrededor de la 1:00 PM de
+# Hermosillo. Duplicarla aquí crearía dos escritores para el mismo dato.
+#
+# Los horarios están en UTC. Hermosillo es UTC-7 todo el año.
+name: Sincronizar Dental Amigo
+
+on:
+  schedule:
+    # Operación de la jornada: agenda, cajas y cobros del día en curso.
+    # Los minutos evitan el punto y la media, donde GitHub acumula más retraso.
+    - cron: '3,23,43 * * * *'
+    # Relectura del mes, para recoger revisiones de Dentalink sin releerlo todo
+    # cada veinte minutos.
+    - cron: '13 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Trabajo a ejecutar'
+        required: true
+        default: 'operations'
+        type: choice
+        options: [operations, month, discover]
+
+# Dos ejecuciones a la vez leerían lo mismo y escribirían lo mismo. La ingesta
+# es idempotente, así que no corrompería nada, pero es trabajo desperdiciado
+# contra un servicio de terceros.
+concurrency:
+  group: dental-amigo-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Elegir el trabajo según el disparador
+        id: plan
+        # Las entradas viajan por el entorno. `${{ }}` sustituye texto antes de
+        # que exista el shell, así que un valor con comillas se ejecutaría.
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          IN_JOB: ${{ inputs.job }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            job="$IN_JOB"
+          else
+            case "$SCHEDULE" in
+              '13 */6 * * *') job="month" ;;
+              *)              job="operations" ;;
+            esac
+          fi
+          case "$job" in
+            operations|month|discover) ;;
+            *) echo "::error::Trabajo desconocido: '$job'."; exit 1 ;;
+          esac
+          echo "job=$job" >> "$GITHUB_OUTPUT"
+
+      - name: ¿Está configurado el token de Dentalink?
+        id: gate
+        # La API de Dentalink es un complemento que hay que contratar. Mientras
+        # el token no exista, este flujo no debe pintarse en rojo cada veinte
+        # minutos: un fallo repetido que no significa nada acaba enseñando a
+        # ignorar los fallos que sí importan.
+        env:
+          TOKEN_PRESENTE: ${{ secrets.DENTALINK_API_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+          echo "configured=$TOKEN_PRESENTE" >> "$GITHUB_OUTPUT"
+          if [ "$TOKEN_PRESENTE" != "true" ]; then
+            echo "::notice::DENTALINK_API_TOKEN aún no está configurado; la sincronización queda en espera."
+          fi
+
+      - name: Pruebas del recolector
+        # Si la lógica está rota, es preferible no publicar nada que publicar
+        # cifras mal interpretadas en algo contable.
+        run: python3 -m unittest discover -s tests -t . -q
+
+      - name: Sincronizar
+        id: run
+        if: steps.gate.outputs.configured == 'true'
+        env:
+          DENTALINK_API_TOKEN: ${{ secrets.DENTALINK_API_TOKEN }}
+          DENTAL_INGEST_URL: ${{ secrets.DENTAL_INGEST_URL }}
+          DENTAL_INGEST_TOKEN: ${{ secrets.DENTAL_INGEST_TOKEN }}
+          JOB: ${{ steps.plan.outputs.job }}
+        run: |
+          set +e
+          python3 run_dental.py "$JOB"
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Avisar que el token de Dentalink dejó de servir
+        # El código 2 es el único fallo que una persona debe resolver a mano.
+        # Se abre un aviso en lugar de dejarlo enterrado en los registros.
+        if: failure() && steps.run.outputs.exit_code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # El texto se arma con printf: una línea sin sangrar dentro de las
+          # comillas cerraría el bloque literal y dejaría el archivo inválido.
+          cuerpo=$(printf '%s\n' \
+            "El recolector no pudo autenticarse contra la API de Dentalink." \
+            "" \
+            "El tablero conserva el ultimo dato valido y marca la fuente; no se escribio ningun cero." \
+            "" \
+            "Para restablecerlo, la cuenta ADMIN debe regenerar el token en Dentalink (Configuracion entonces API) y actualizar el secreto DENTALINK_API_TOKEN del repositorio.")
+
+          existing=$(gh issue list --state open --label dentalink-token --json number --jq '.[0].number')
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "El token de Dentalink dejó de servir" \
+              --label dentalink-token \
+              --body "$cuerpo"
+          else
+            gh issue comment "$existing" \
+              --body "El token seguía sin servir el $(date -u '+%Y-%m-%d %H:%M UTC')."
+          fi

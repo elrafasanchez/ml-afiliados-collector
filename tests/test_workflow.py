@@ -16,7 +16,11 @@ import re
 import unittest
 from pathlib import Path
 
-WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "sync.yml"
+WORKFLOWS_DIR = Path(__file__).resolve().parents[1] / ".github" / "workflows"
+#: Todos los flujos del repositorio, no solo uno. Una comprobación que solo mira
+#: un archivo deja de proteger en cuanto se añade el siguiente.
+WORKFLOWS = sorted(WORKFLOWS_DIR.glob("*.yml"))
+WORKFLOW = WORKFLOWS_DIR / "sync.yml"
 
 _BLOCK_START = re.compile(r"^(\s*)(?:-\s+)?(run|body|script):\s*[|>][-+]?\s*$")
 
@@ -41,7 +45,13 @@ class BlockScalarTest(unittest.TestCase):
     """
 
     def test_block_scalars_stay_indented(self):
-        lines = WORKFLOW.read_text().splitlines()
+        for workflow in WORKFLOWS:
+            with self.subTest(workflow=workflow.name):
+                self.assertEqual(self._offenders(workflow), [], f"{workflow.name}: bloque roto")
+
+    @staticmethod
+    def _offenders(workflow: Path) -> list[str]:
+        lines = workflow.read_text().splitlines()
         problems: list[str] = []
 
         index = 0
@@ -84,58 +94,74 @@ class BlockScalarTest(unittest.TestCase):
                     )
                 break
 
-        self.assertEqual(
-            problems,
-            [],
-            "Una línea sin sangrar cierra el bloque y rompe el archivo:\n"
-            + "\n".join(problems),
-        )
+        return problems
 
 
 class StructureTest(unittest.TestCase):
-    def setUp(self):
-        self.text = WORKFLOW.read_text()
-        self.lines = self.text.splitlines()
+    def test_every_workflow_has_the_keys_actions_requires(self):
+        for workflow in WORKFLOWS:
+            lines = workflow.read_text().splitlines()
+            for key in ("name:", "on:", "jobs:"):
+                with self.subTest(workflow=workflow.name, key=key):
+                    self.assertTrue(
+                        any(line.startswith(key) for line in lines),
+                        f"{workflow.name}: falta la clave {key}",
+                    )
 
-    def test_has_the_keys_actions_requires(self):
-        for key in ("name:", "on:", "jobs:"):
-            self.assertTrue(
-                any(line.startswith(key) for line in self.lines),
-                f"Falta la clave de nivel superior {key}",
-            )
-
-    def test_uses_no_tabs(self):
+    def test_no_workflow_uses_tabs(self):
         # YAML prohíbe el tabulador como sangría, y es invisible al leer.
-        offenders = [i + 1 for i, line in enumerate(self.lines) if "\t" in line]
-        self.assertEqual(offenders, [], f"Tabuladores en las líneas {offenders}")
+        for workflow in WORKFLOWS:
+            lines = workflow.read_text().splitlines()
+            offenders = [i + 1 for i, line in enumerate(lines) if "\t" in line]
+            with self.subTest(workflow=workflow.name):
+                self.assertEqual(offenders, [], f"{workflow.name}: tabuladores en {offenders}")
 
     def test_indentation_is_always_even(self):
-        odd = [
-            i + 1
-            for i, line in enumerate(self.lines)
-            if line.strip() and not line.lstrip().startswith("#") and indentation(line) % 2
-        ]
-        self.assertEqual(odd, [], f"Sangría impar en las líneas {odd}")
+        for workflow in WORKFLOWS:
+            lines = workflow.read_text().splitlines()
+            odd = [
+                i + 1
+                for i, line in enumerate(lines)
+                if line.strip() and not line.lstrip().startswith("#") and indentation(line) % 2
+            ]
+            with self.subTest(workflow=workflow.name):
+                self.assertEqual(odd, [], f"{workflow.name}: sangría impar en {odd}")
 
-    def test_every_secret_it_reads_is_documented(self):
-        # Un secreto que el flujo lee pero nadie configuró produce un fallo
+    def test_the_two_businesses_never_share_a_concurrency_group(self):
+        # Un grupo compartido haría que una corrida de Dental Amigo esperara o
+        # cancelara a una de Mercado Libre, que está congelado y no debe verse
+        # afectado desde aquí.
+        grupos = []
+        for workflow in WORKFLOWS:
+            match = re.search(r"^concurrency:\n\s+group:\s*(\S+)", workflow.read_text(), re.M)
+            if match:
+                grupos.append(match.group(1))
+        self.assertEqual(len(grupos), len(set(grupos)), f"Grupos repetidos: {grupos}")
+
+    def test_every_secret_any_workflow_reads_is_documented(self):
+        # Un secreto que un flujo lee pero nadie configuró produce un fallo
         # silencioso: la variable llega vacía y el trabajo falla más adelante.
-        usados = set(re.findall(r"secrets\.([A-Z_]+)", self.text))
-        readme = (WORKFLOW.resolve().parents[2] / "README.md").read_text()
-        for secreto in usados:
-            self.assertIn(
-                secreto, readme, f"El flujo usa {secreto} pero el README no lo explica"
-            )
+        readme = (WORKFLOWS_DIR.parents[1] / "README.md").read_text()
+        for workflow in WORKFLOWS:
+            for secreto in sorted(set(re.findall(r"secrets\.([A-Z_]+)", workflow.read_text()))):
+                with self.subTest(workflow=workflow.name, secret=secreto):
+                    self.assertIn(
+                        secreto, readme,
+                        f"{workflow.name} usa {secreto} pero el README no lo explica",
+                    )
 
     def test_schedules_match_the_cases_that_handle_them(self):
         # Si un cron cambia y el `case` no, ese horario caería en el trabajo por
         # omisión sin que nada avise.
-        crons = set(re.findall(r"- cron: '([^']+)'", self.text))
-        manejados = set(re.findall(r"^\s*'([^']+)'\)\s+job=", self.text, re.M))
-        self.assertTrue(
-            manejados <= crons,
-            f"El `case` atiende horarios que ya no existen: {manejados - crons}",
-        )
+        for workflow in WORKFLOWS:
+            text = workflow.read_text()
+            crons = set(re.findall(r"- cron: '([^']+)'", text))
+            manejados = set(re.findall(r"^\s*'([^']+)'\)\s+job=", text, re.M))
+            with self.subTest(workflow=workflow.name):
+                self.assertTrue(
+                    manejados <= crons,
+                    f"{workflow.name}: el `case` atiende horarios inexistentes: {manejados - crons}",
+                )
 
 
 if __name__ == "__main__":

@@ -1,8 +1,23 @@
-# Recolector de Afiliados de Mercado Libre
+# Recolectores de Central de Ingresos
+
+Dos recolectores independientes que alimentan el tablero desde GitHub Actions:
+**no necesitan que tu computadora esté encendida ni que haya un navegador
+abierto.**
+
+| Recolector | Negocio | Fuente | Sección |
+|---|---|---|---|
+| `mlaf` | Mercado Libre | Panel de Afiliados (HTTP + cookie de sesión) | abajo |
+| `dental` | Dental Amigo | API oficial de Dentalink (token) | [Dental Amigo](#dental-amigo) |
+
+Comparten repositorio y planificador, pero **ningún módulo**: un cambio en uno
+no puede romper al otro, y sus flujos usan grupos de concurrencia distintos.
+
+---
+
+# Mercado Libre
 
 Sincroniza las métricas del programa de Afiliados y Creadores hacia el tablero
-de Central de Ingresos. Corre en GitHub Actions: **no necesita que tu
-computadora esté encendida ni que Chrome esté abierto.**
+de Central de Ingresos.
 
 ## Qué hace
 
@@ -115,3 +130,83 @@ Ante el código 2 el flujo abre un aviso en el repositorio.
   Llega un correo antes; basta con reactivarlo desde Actions.
 - **La sesión de Mercado Libre caduca.** No existe un token de larga duración
   para estos datos: es la única intervención manual del sistema.
+
+
+---
+
+# Dental Amigo
+
+Sincroniza la operación de la clínica desde la **API oficial de Dentalink**.
+
+```
+Dentalink API  ──HTTPS+token──▶  recolector  ──HTTPS+token──▶  /api/dental-amigo/ingest  ──▶  D1
+```
+
+A diferencia de Mercado Libre, aquí sí hay un mecanismo soportado: un **token
+durable** que emite la cuenta ADMIN. No hay cookies, no hay sesión que caduque y
+no hace falta navegador. El token solo deja de servir si alguien lo revoca.
+
+## Lo que lee
+
+| Recurso | Para qué |
+|---|---|
+| `GET /dentistas` | Profesionales y especialidad |
+| `GET /cajas` | Cajas del día, abiertas y cerradas |
+| `GET /pagos` | Cobros individuales de pacientes |
+| `GET /citas` | Agenda del día y estado real de cada cita |
+
+**Flujos DA no pasa por aquí.** Esa fuente ya llega sola desde un Apps Script del
+propio libro de cálculo, de lunes a sábado alrededor de la 1:00 PM de
+Hermosillo. Duplicarla crearía dos escritores para el mismo dato.
+
+## Trabajos y frecuencia
+
+| Trabajo | Cuándo | Para qué |
+|---|---|---|
+| `operations` | cada 20 min | agenda, cajas y cobros del día en curso |
+| `month` | cada 6 horas | relee el mes para recoger revisiones de Dentalink |
+| `discover` | a mano | describe la forma real de la API sin publicar nada |
+
+La agenda cambia durante la jornada; el histórico del mes casi nunca. Releer el
+mes entero cada veinte minutos gastaría peticiones contra un tercero para volver
+a escribir lo mismo.
+
+## Secretos
+
+| Secreto | Valor |
+|---|---|
+| `DENTALINK_API_TOKEN` | Token de la API, emitido por la cuenta ADMIN en **Configuración → API** |
+| `DENTAL_INGEST_URL` | `https://radar-afiliados-rafsl.el-rafasanchez.chatgpt.site/api/dental-amigo/ingest` |
+| `DENTAL_INGEST_TOKEN` | El token de ingesta de Dental Amigo que ya vive en los Secrets del Site |
+
+## Reconocer la API antes de confiar en ella
+
+La documentación de Dentalink describe los recursos pero no todos sus campos.
+Antes de dar por buena una cifra contable:
+
+```bash
+export DENTALINK_API_TOKEN='...'
+export DENTAL_DRY_RUN=1
+python3 run_dental.py discover
+```
+
+Imprime qué campos existen y de qué tipo son, **con los datos de paciente
+enmascarados**, para que el informe pueda revisarse sin exponer información
+clínica.
+
+## Privacidad
+
+Los nombres de paciente se reducen a *nombre de pila + inicial del apellido*
+antes de salir del proceso. El tablero necesita distinguir personas dentro de
+una agenda, no identificarlas.
+
+## Códigos de salida
+
+| Código | Significado | Acción |
+|---|---|---|
+| 0 | Publicado | ninguna |
+| 1 | Fallo temporal (red, 5xx) | se reintenta solo en la siguiente ejecución |
+| 2 | **Token de Dentalink revocado** | la cuenta ADMIN lo regenera y se actualiza `DENTALINK_API_TOKEN` |
+| 3 | La API cambió de forma o falló la validación | correr `discover` y revisar el mapeo |
+
+Ante el código 2 el flujo abre un aviso etiquetado `dentalink-token`.
