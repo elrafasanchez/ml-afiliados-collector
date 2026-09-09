@@ -1,0 +1,59 @@
+{
+ "filter_time_range": "1788825600000--1788912000000",
+ "filter_type": "GENERAL",
+ "page": 1,
+ "items_per_page": 10,
+ "total_results": 42,
+ "order_by": "QUANTITY",
+ "sort": "DESC",
+ "item_list": [
+  {
+   "product": "Cangurera Xopexld Lululemon Mujer Negra Poliéster 4b Negro Liso",
+   "category": "Equipaje y Bolsas",
+   "quantity": 22,
+   "quantity_direct": 22,
+   "quantity_not_direct": 0,
+   "fee": 0.14,
+   "fee_direct": 0.14,
+   "fee_not_direct": 0.07,
+   "earnings": 718.93,
+   "total_sales": 6112.7,
+   "entity_type": "ITEM",
+   "entity_id": "MLM5254341382",
+   "image_uri": "https://http2.mlstatic.com/D_710625-MLM110973027405_042026-I.webp",
+   "link": "https://articulo.mercadolibre.com.mx/MLM-5254341382-cangurera-xopexld-lululemon-mujer-negra-poliester-4b-negro-liso-_JM"
+  },
+  {
+   "product": "Recipientes Herméticos De Almacenamiento De Cocina 12 Pz Transparente 12 Piezas",
+   "category": "Cocina",
+   "quantity": 10,
+   "quantity_direct": 10,
+   "quantity_not_direct": 0,
+   "fee": 0.2,
+   "fee_direct": 0.14,
+   "fee_not_direct": 0.07,
+   "earnings": 347.72,
+   "total_sales": 2070,
+   "entity_type": "ITEM",
+   "entity_id": "MLM2591106219",
+   "image_uri": "https://http2.mlstatic.com/D_778976-MLA111876334416_062026-I.jpg",
+   "link": "https://articulo.mercadolibre.com.mx/MLM-2591106219-recipientes-hermeticos-de-almacenamiento-de-cocina-12-pz-transparente-12-piezas-_JM"
+  },
+  {
+   "product": "Cangurera Xopexld Lululemon Mujer Negra Poliéster 4b Blanco Liso",
+   "category": "Equipaje y Bolsas",
+   "quantity": 5,
+   "quantity_direct": 5,
+   "quantity_not_direct": 0,
+   "fee": 0.14,
+   "fee_direct": 0.14,
+   "fee_not_direct": 0.07,
+   "earnings": 163.38,
+   "total_sales": 1389.25,
+   "entity_type": "ITEM",
+   "entity_id": "MLM3184594439",
+   "image_uri": "https://http2.mlstatic.com/D_845649-MLM113749991074_072026-I.jpg",
+   "link": "https://articulo.mercadolibre.com.mx/MLM-3184594439-cangurera-xopexld-lululemon-mujer-negra-poliester-4b-blanco-liso-_JM"
+  }
+ ]
+}

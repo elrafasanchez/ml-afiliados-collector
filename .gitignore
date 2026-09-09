@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+*.log
+historico.json
+historico-180-dias.json

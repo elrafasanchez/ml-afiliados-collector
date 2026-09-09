@@ -1,0 +1,25 @@
+{
+  "data": [
+    {"id": "clicks", "current_amount": 2124, "variation": 59, "variation_indicator": "INCREASE"},
+    {"id": "buyers", "current_amount": 30, "variation": 20, "variation_indicator": "INCREASE"},
+    {"id": "requests", "current_amount": 46, "variation": 2, "variation_indicator": "DECREASE"},
+    {"id": "orders", "current_amount": 57, "variation": 12, "variation_indicator": "INCREASE"},
+    {"id": "sales", "current_amount": 22339.15, "variation": 10, "variation_indicator": "INCREASE"}
+  ],
+  "commissions": [
+    {"id": "summary", "current_amount": 2365, "variation": 11, "variation_indicator": "INCREASE",
+     "data": [{"id": "marketplace", "value": 2287.5}, {"id": "seller", "value": 77.5}]},
+    {"id": "marketplace", "current_amount": 2287.5, "variation": 96.72, "variation_indicator": "SUMMARY"},
+    {"id": "seller", "current_amount": 77.5, "variation": 3.28, "variation_indicator": "SUMMARY"}
+  ],
+  "sales": [
+    {"id": "total_gross_sales", "current_amount": 23671.83, "variation": 17, "variation_indicator": "INCREASE"},
+    {"id": "total_estimated_sales", "current_amount": 22339.15, "variation": 10, "variation_indicator": "INCREASE"},
+    {"id": "total_not_effective_sales", "current_amount": 1332.68, "variation": 100, "variation_indicator": "UNFAVORABLE_INCREASE"},
+    {"id": "count_not_effective_sales", "current_amount": 3, "variation": 100, "variation_indicator": "UNFAVORABLE_INCREASE"}
+  ],
+  "filter_time_range": "1788825600000--1788912000000",
+  "filter_type": "GENERAL",
+  "last_update": "2026-09-09T01:14:35Z",
+  "show_modal_new_metrics": false
+}

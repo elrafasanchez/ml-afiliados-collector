@@ -1,0 +1,110 @@
+# Sincronización autónoma de las métricas de Afiliados de Mercado Libre.
+#
+# Este archivo es el planificador del sistema: corre en la infraestructura de
+# GitHub, no en la computadora de nadie. Es lo que permite apagar la Mac y que
+# el tablero siga actualizándose.
+#
+# Los horarios están en UTC. Hermosillo es UTC-7 todo el año.
+name: Sincronizar Mercado Libre
+
+on:
+  schedule:
+    # Día en curso, mes vigente y detalle transaccional: cada 30 minutos.
+    # El minuto 7/37 evita el pico de trabajos que todo el mundo programa en
+    # punto y a la media, donde GitHub acumula más retraso.
+    - cron: '7,37 * * * *'
+    # Relectura de la última semana, para capturar revisiones de la fuente.
+    - cron: '23 */6 * * *'
+    # Auditoría completa de 180 días y reconciliación, una vez por semana.
+    - cron: '41 9 * * 1'
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Trabajo a ejecutar'
+        required: true
+        default: 'today'
+        type: choice
+        options: [today, recent, backfill, audit]
+      start:
+        description: 'Inicio inclusivo YYYY-MM-DD (solo backfill/audit)'
+        required: false
+        type: string
+      end:
+        description: 'Fin exclusivo YYYY-MM-DD (solo backfill/audit)'
+        required: false
+        type: string
+
+# Dos ejecuciones simultáneas leerían la misma fuente y publicarían el mismo
+# día. La ingesta es idempotente, así que no corrompería nada, pero es trabajo
+# desperdiciado contra un servicio de terceros.
+concurrency:
+  group: mercadolibre-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Elegir el trabajo según el disparador
+        id: plan
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=${{ inputs.job }}" >> "$GITHUB_OUTPUT"
+            echo "args=${{ inputs.start && format('--start {0}', inputs.start) || '' }} ${{ inputs.end && format('--end {0}', inputs.end) || '' }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              '23 */6 * * *') echo "job=recent" >> "$GITHUB_OUTPUT"; echo "args=--days 7" >> "$GITHUB_OUTPUT" ;;
+              '41 9 * * 1')   echo "job=audit"  >> "$GITHUB_OUTPUT"; echo "args=" >> "$GITHUB_OUTPUT" ;;
+              *)              echo "job=today"  >> "$GITHUB_OUTPUT"; echo "args=" >> "$GITHUB_OUTPUT" ;;
+            esac
+          fi
+
+      - name: Pruebas del recolector
+        # Si la lógica está rota, es preferible no publicar nada que publicar
+        # datos mal interpretados.
+        run: python3 -m unittest discover -s tests -t . -q
+
+      - name: Sincronizar
+        id: run
+        env:
+          ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: |
+          set +e
+          python3 run_sync.py ${{ steps.plan.outputs.job }} ${{ steps.plan.outputs.args }}
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit $code
+
+      - name: Avisar que la sesión de Mercado Libre caducó
+        # El código 2 es el único fallo que una persona tiene que resolver a
+        # mano. Se abre un aviso en lugar de dejarlo enterrado en los registros.
+        if: failure() && steps.run.outputs.exit_code == '2'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          existing=$(gh issue list --state open --label sesion-caducada --json number --jq '.[0].number')
+          if [ -z "$existing" ]; then
+            gh issue create \
+              --title "La sesión de Mercado Libre caducó" \
+              --label sesion-caducada \
+              --body "El recolector no pudo autenticarse contra Mercado Libre.
+
+El tablero conserva el último dato válido y lo muestra marcado como rezagado; no se escribió ningún cero.
+
+Para restablecerlo, actualiza el secreto \`ML_SESSION_COOKIE\` siguiendo \`docs/renovar-sesion.md\` y vuelve a lanzar el trabajo \`today\` desde la pestaña Actions."
+          else
+            gh issue comment "$existing" --body "La sesión seguía caducada en la ejecución del $(date -u '+%Y-%m-%d %H:%M UTC')."
+          fi

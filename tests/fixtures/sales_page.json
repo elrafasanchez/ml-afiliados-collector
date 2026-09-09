@@ -1,0 +1,25 @@
+{
+  "item_list": [
+    {"id": "2000018355466108", "date": "08/09/2026",
+     "link": "https://articulo.mercadolibre.com.mx/MLM-3177998333-sensor-oxigeno-24l-jeep-cherokee-_JM",
+     "productImage": "https://http2.mlstatic.com/D_998242-MLM100942674557_122025-I.jpg",
+     "productName": "Sensor Oxígeno 2.4l Jeep Cherokee Fiat 500x 200 2014-2020 Xd",
+     "categoryName": "Refacciones Autos y Camionetas", "storeName": "CNZHENGZHOUSHIMAOQISHANMXR",
+     "saleValue": 1050.39, "saleUnits": 1, "commissionValue": 93.91,
+     "commissionPercentage": 14, "saleType": "DIRECT", "status": "IN_REVIEW"},
+    {"id": "2000018355270748", "date": "08/09/2026",
+     "link": "https://articulo.mercadolibre.com.mx/MLM-5254341382-cangurera-xopexld-lululemon-_JM",
+     "productImage": "https://http2.mlstatic.com/D_710625-MLM110973027405_042026-I.webp",
+     "productName": "Cangurera Xopexld Lululemon Mujer Negra Poliéster 4b Negro Liso",
+     "categoryName": "Equipaje y Bolsas", "storeName": "TIENDADEAURICULARESKKK",
+     "saleValue": 359.85, "saleUnits": 1, "commissionValue": 32.68,
+     "commissionPercentage": 14, "saleType": "DIRECT", "status": "IN_REVIEW"}
+  ],
+  "filter_time_range": "1788825600000--1788912000000",
+  "filter_type": "GENERAL",
+  "page": 1,
+  "items_per_page": 2,
+  "total_results": 49,
+  "order_by": "ORD_DATE_CREATED",
+  "sort": "DESC"
+}
