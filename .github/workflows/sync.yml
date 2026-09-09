@@ -83,11 +83,20 @@ jobs:
             esac
           fi
 
-          # Las fechas se validan aquí y no más adelante: un rango mal escrito
-          # debe detener el trabajo antes de tocar la fuente.
+          # Las fechas se comprueban aquí y no más adelante: un rango mal
+          # escrito debe detener el trabajo antes de tocar la fuente.
+          #
+          # No basta con la forma: `2026-13-45` tiene cuatro-dos-dos dígitos y
+          # no existe. Se contrasta contra `date`, que reconstruye la fecha y
+          # devuelve algo distinto de lo escrito si el mes o el día no existen.
           for value in "$start" "$end"; do
-            if [ -n "$value" ] && ! printf '%s' "$value" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            [ -n "$value" ] || continue
+            if ! printf '%s' "$value" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
               echo "::error::La fecha '$value' no tiene el formato YYYY-MM-DD."
+              exit 1
+            fi
+            if [ "$(date -d "$value" +%Y-%m-%d 2>/dev/null)" != "$value" ]; then
+              echo "::error::La fecha '$value' no existe en el calendario."
               exit 1
             fi
           done
