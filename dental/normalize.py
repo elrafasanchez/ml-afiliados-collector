@@ -247,6 +247,37 @@ def build_collection_snapshots(
     return snapshots
 
 
+def confirmed_empty_days(
+    snapshots: list[dict[str, Any]],
+    days: list[str],
+    updated_at: str,
+) -> list[dict[str, Any]]:
+    """Marca explícitamente los días que Dentalink respondió sin ninguna caja.
+
+    Sin esto, un día sin cobros y un día que no pudimos leer se ven idénticos
+    aguas abajo: en ambos casos no llega nada. El tablero necesita distinguir
+    "la clínica no cobró" de "no sabemos", y solo quien hizo la consulta puede
+    afirmar la primera.
+    """
+    con_caja = {s["dateKey"] for s in snapshots}
+    return [
+        {
+            "id": f"empty-{day}",
+            "dateKey": day,
+            "registerId": None,
+            "state": "CLOSED",
+            "paymentCount": 0,
+            "totalCollectedCents": 0,
+            "totalExpensesCents": 0,
+            "responsibleReference": None,
+            "sourceReference": None,
+            "updatedAt": updated_at,
+        }
+        for day in days
+        if day not in con_caja
+    ]
+
+
 def normalize_appointments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Citas del día, con su estado crudo intacto."""
     appointments = []

@@ -24,6 +24,7 @@ from .logging_setup import log
 from .normalize import (
     ClinicSnapshot,
     build_collection_snapshots,
+    confirmed_empty_days,
     normalize_appointments,
     normalize_doctors,
     normalize_payments,
@@ -73,7 +74,16 @@ class DentalCollector:
         payments = normalize_payments(
             self._api.collect("/pagos", params=DentalinkAPI.date_filter("fecha_recepcion", start, end))
         )
-        snapshots = build_collection_snapshots(registers, payments, iso_utc())
+        now = iso_utc()
+        snapshots = build_collection_snapshots(registers, payments, now)
+        # Los días del rango que la fuente respondió sin cajas se marcan como
+        # ceros confirmados. Un día ausente significa "no leímos", nunca "$0".
+        dias = []
+        cursor = start
+        while cursor <= end:
+            dias.append(cursor.isoformat())
+            cursor = cursor + timedelta(days=1)
+        snapshots.extend(confirmed_empty_days(snapshots, dias, now))
         return registers, payments, snapshots
 
     def read_appointments(self, day: date) -> list[dict[str, Any]]:
