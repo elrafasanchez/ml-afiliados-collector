@@ -15,6 +15,11 @@ on:
     - cron: '7,37 * * * *'
     # Relectura de la última semana, para capturar revisiones de la fuente.
     - cron: '23 */6 * * *'
+    # Reconciliación diaria a la 1:30 PM de Hermosillo (20:30 UTC, sin horario
+    # de verano). No es una ingesta nueva: es el mismo trabajo 'recent' con una
+    # hora fija, para garantizar un cierre diario aunque las corridas
+    # frecuentes hayan fallado.
+    - cron: '30 20 * * *'
     # Auditoría completa de 180 días y reconciliación, una vez por semana.
     - cron: '41 9 * * 1'
   workflow_dispatch:
@@ -78,6 +83,7 @@ jobs:
             start=""; end=""; days=""
             case "$SCHEDULE" in
               '23 */6 * * *') job="recent"; days="7" ;;
+              '30 20 * * *') job="recent"; days="7" ;;
               '41 9 * * 1')   job="audit" ;;
               *)              job="today" ;;
             esac
