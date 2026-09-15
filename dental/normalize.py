@@ -128,6 +128,7 @@ class ClinicSnapshot:
     cash_register_payments: list[dict[str, Any]] = field(default_factory=list)
     collection_snapshots: list[dict[str, Any]] = field(default_factory=list)
     payrolls: list[dict[str, Any]] = field(default_factory=list)
+    confirmed_empty_dates: list[str] = field(default_factory=list)
 
     def as_payload(self, synced_at: str, *, active_payrolls_complete: bool = False) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -138,6 +139,8 @@ class ClinicSnapshot:
             "cashRegisters": self.cash_registers,
             "cashRegisterPayments": self.cash_register_payments,
             "collectionSnapshots": self.collection_snapshots,
+            # Fechas, no cortes: un día sin cajas es un hecho del día.
+            "confirmedEmptyDates": self.confirmed_empty_dates,
         }
         if self.payrolls or active_payrolls_complete:
             payload["payrolls"] = self.payrolls
@@ -250,32 +253,16 @@ def build_collection_snapshots(
 def confirmed_empty_days(
     snapshots: list[dict[str, Any]],
     days: list[str],
-    updated_at: str,
-) -> list[dict[str, Any]]:
-    """Marca explícitamente los días que Dentalink respondió sin ninguna caja.
+) -> list[str]:
+    """Los días del rango que Dentalink respondió sin ninguna caja.
 
-    Sin esto, un día sin cobros y un día que no pudimos leer se ven idénticos
-    aguas abajo: en ambos casos no llega nada. El tablero necesita distinguir
-    "la clínica no cobró" de "no sabemos", y solo quien hizo la consulta puede
-    afirmar la primera.
+    Devuelve fechas, no cortes. Un día sin cajas es un hecho del día; fabricarle
+    un corte con caja nula lo metía en una tabla cuya identidad es la caja, y
+    ahí el índice único deja de poder reconocerlo: cada reenvío intentaba
+    insertar otra vez. Eso aguanta una carga a mano y rompe una automática.
     """
     con_caja = {s["dateKey"] for s in snapshots}
-    return [
-        {
-            "id": f"empty-{day}",
-            "dateKey": day,
-            "registerId": None,
-            "state": "CLOSED",
-            "paymentCount": 0,
-            "totalCollectedCents": 0,
-            "totalExpensesCents": 0,
-            "responsibleReference": None,
-            "sourceReference": None,
-            "updatedAt": updated_at,
-        }
-        for day in days
-        if day not in con_caja
-    ]
+    return [day for day in days if day not in con_caja]
 
 
 def normalize_appointments(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

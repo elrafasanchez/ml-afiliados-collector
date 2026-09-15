@@ -66,8 +66,8 @@ class DentalCollector:
     def read_doctors(self) -> list[dict[str, Any]]:
         return normalize_doctors(self._api.collect("/dentistas"))
 
-    def read_range(self, start: date, end: date) -> tuple[list, list, list]:
-        """Cajas, cobros y cortes de un rango de días de clínica."""
+    def read_range(self, start: date, end: date) -> tuple[list, list, list, list]:
+        """Cajas, cobros, cortes y los días confirmados sin caja."""
         registers = normalize_registers(
             self._api.collect("/cajas", params=DentalinkAPI.date_filter("fecha_apertura", start, end))
         )
@@ -83,8 +83,8 @@ class DentalCollector:
         while cursor <= end:
             dias.append(cursor.isoformat())
             cursor = cursor + timedelta(days=1)
-        snapshots.extend(confirmed_empty_days(snapshots, dias, now))
-        return registers, payments, snapshots
+        vacios = confirmed_empty_days(snapshots, dias)
+        return registers, payments, snapshots, vacios
 
     def read_appointments(self, day: date) -> list[dict[str, Any]]:
         return normalize_appointments(
@@ -99,10 +99,11 @@ class DentalCollector:
         result = SyncResult(job="operations", started_at=iso_utc())
 
         result.snapshot.doctors = self.read_doctors()
-        registers, payments, snapshots = self.read_range(today, today)
+        registers, payments, snapshots, vacios = self.read_range(today, today)
         result.snapshot.cash_registers = registers
         result.snapshot.cash_register_payments = payments
         result.snapshot.collection_snapshots = snapshots
+        result.snapshot.confirmed_empty_dates = vacios
         result.snapshot.appointments = self.read_appointments(today)
 
         self._reconcile_day(result, today, registers, payments, snapshots)
@@ -115,10 +116,11 @@ class DentalCollector:
         today = clinic_today(now)
         result = SyncResult(job="month", started_at=iso_utc())
 
-        registers, payments, snapshots = self.read_range(month_start(today), today)
+        registers, payments, snapshots, vacios = self.read_range(month_start(today), today)
         result.snapshot.cash_registers = registers
         result.snapshot.cash_register_payments = payments
         result.snapshot.collection_snapshots = snapshots
+        result.snapshot.confirmed_empty_dates = vacios
 
         result.reconciliation = {
             "scope": "month",
