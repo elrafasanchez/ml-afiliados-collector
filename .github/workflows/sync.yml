@@ -13,6 +13,8 @@ on:
     # El minuto 7/37 evita el pico de trabajos que todo el mundo programa en
     # punto y a la media, donde GitHub acumula más retraso.
     - cron: '7,37 * * * *'
+    # Radar wakeups share this workflow; sales keep their existing cadence.
+    - cron: '17,27,47,57 * * * *'
     # Relectura de la última semana, para capturar revisiones de la fuente.
     - cron: '23 */6 * * *'
     # Reconciliación diaria a la 1:30 PM de Hermosillo (20:30 UTC, sin horario
@@ -29,7 +31,7 @@ on:
         required: true
         default: 'today'
         type: choice
-        options: [today, recent, backfill, audit]
+        options: [today, recent, backfill, audit, radar, audience]
       start:
         description: 'Inicio inclusivo YYYY-MM-DD (solo backfill/audit)'
         required: false
@@ -82,6 +84,7 @@ jobs:
           else
             start=""; end=""; days=""
             case "$SCHEDULE" in
+              '17,27,47,57 * * * *') job="radar" ;;
               '23 */6 * * *') job="recent"; days="7" ;;
               '30 20 * * *') job="recent"; days="7" ;;
               '41 9 * * 1')   job="audit" ;;
@@ -107,7 +110,7 @@ jobs:
             fi
           done
           case "$job" in
-            today|recent|backfill|audit) ;;
+            today|recent|backfill|audit|radar|audience) ;;
             *) echo "::error::Trabajo desconocido: '$job'."; exit 1 ;;
           esac
 
@@ -123,7 +126,26 @@ jobs:
         # datos mal interpretados.
         run: python3 -m unittest discover -s tests -t . -q
 
+      - name: Revisar radar del canal de difusión
+        # A radar failure never prevents the established sales ingestion.
+        continue-on-error: true
+        env:
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: python3 run_radar.py
+
+      - name: Leer comunicaciones oficiales de Mercado Libre
+        continue-on-error: true
+        env:
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+          GMAIL_RADAR_CLIENT_ID: ${{ secrets.GMAIL_RADAR_CLIENT_ID }}
+          GMAIL_RADAR_CLIENT_SECRET: ${{ secrets.GMAIL_RADAR_CLIENT_SECRET }}
+          GMAIL_RADAR_REFRESH_TOKEN: ${{ secrets.GMAIL_RADAR_REFRESH_TOKEN }}
+        run: python3 run_email.py
+
       - name: Sincronizar
+        if: steps.plan.outputs.job != 'radar' && steps.plan.outputs.job != 'audience'
         id: run
         env:
           ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
@@ -144,6 +166,14 @@ jobs:
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit $code
+
+      - name: Actualizar detalle de audiencia de 180 días
+        if: steps.plan.outputs.job == 'audience' || steps.plan.outputs.job == 'audit'
+        env:
+          ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: python3 run_audience.py
 
       - name: Avisar que la sesión de Mercado Libre caducó
         # El código 2 es el único fallo que una persona tiene que resolver a

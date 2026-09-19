@@ -210,3 +210,31 @@ una agenda, no identificarlas.
 | 3 | La API cambió de forma o falló la validación | correr `discover` y revisar el mapeo |
 
 Ante el código 2 el flujo abre un aviso etiquetado `dentalink-token`.
+
+## Radar canal de difusión
+
+The existing Mercado Libre workflow wakes `/api/mercadolibre/radar/scan` every
+10 minutes, including overnight (Hermosillo UTC−7). Sales retain their existing
+cadence. The Site owns a persistent lease and next-scan timestamp: 15 minutes
+normally (actual schedule typically 20), 10 during existing active rallies,
+and longer after authentication/rate-limit failures. GitHub schedules are
+best-effort and can be delayed; the Site displays late runs rather than claiming
+an SLA. There is no new workflow and no local Chrome dependency.
+
+`ML_INGEST_URL` and `ML_INGEST_TOKEN` are reused. Product verification separately
+requires the Site secret `ML_RADAR_ACCESS_TOKEN`, obtained through an authorized
+Mercado Libre application. The affiliate dashboard cookie is NOT an API token.
+A missing token yields a visible degraded run and never creates a verified deal.
+The master image, square template, affiliate link provider, coupon verification
+and channel attribution are connection blockers, not fabricated success paths.
+Automatic WhatsApp publication stays OFF.
+
+### Optional server-side Gmail (read-only)
+
+The Codex Gmail connector can read messages interactively, but its token is not
+exported to GitHub Actions. For continuous server-side monitoring, configure
+`GMAIL_RADAR_CLIENT_ID`, `GMAIL_RADAR_CLIENT_SECRET`, and
+`GMAIL_RADAR_REFRESH_TOKEN` in repository Actions secrets, authorized only with
+`https://www.googleapis.com/auth/gmail.readonly`. `run_email.py` never modifies
+email and never verifies coupons based on email content. Missing credentials
+leave this step visibly disconnected rather than faking ingestion.
