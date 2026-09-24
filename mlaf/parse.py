@@ -130,7 +130,10 @@ def extract_general_kpis(html: str) -> dict[str, Any]:
         props = extract_page_props(html)
         log("kpi_schema_missing_timestamp", kpi_keys=sorted(kpis),
             page_keys=sorted(props),
-            value_types={key: type(value).__name__ for key, value in kpis.items()})
+            value_types={key: type(value).__name__ for key, value in kpis.items()},
+            reference_now=props.get("referenceNow"), nrt=props.get("isNrtEnabled"),
+            validation_failed=props.get("validationFailed"),
+            sales=kpis.get("sales"), filter_time_range=kpis.get("filter_time_range"))
     return kpis
 
 
