@@ -124,6 +124,13 @@ def extract_general_kpis(html: str) -> dict[str, Any]:
     kpis = extract_page_props(html).get("generalKpis")
     if not isinstance(kpis, dict):
         raise SchemaError("La hidratación no expone `generalKpis`.")
+    if not kpis.get("last_update"):
+        # Diagnose source schema failures without logging cookies or page data.
+        from .logging_setup import log
+        props = extract_page_props(html)
+        log("kpi_schema_missing_timestamp", kpi_keys=sorted(kpis),
+            page_keys=sorted(props),
+            value_types={key: type(value).__name__ for key, value in kpis.items()})
     return kpis
 
 
