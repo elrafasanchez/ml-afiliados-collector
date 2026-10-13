@@ -13,7 +13,7 @@ on:
     # El minuto 7/37 evita el pico de trabajos que todo el mundo programa en
     # punto y a la media, donde GitHub acumula más retraso.
     - cron: '7,37 * * * *'
-    # Radar wakeups share this workflow; sales keep their existing cadence.
+    # Aprovechar también estos despertares para actualizar ventas antes del radar.
     - cron: '17,27,47,57 * * * *'
     # Relectura de la última semana, para capturar revisiones de la fuente.
     - cron: '23 */6 * * *'
@@ -84,7 +84,7 @@ jobs:
           else
             start=""; end=""; days=""
             case "$SCHEDULE" in
-              '17,27,47,57 * * * *') job="radar" ;;
+              '17,27,47,57 * * * *') job="today" ;;
               '23 */6 * * *') job="recent"; days="7" ;;
               '30 20 * * *') job="recent"; days="7" ;;
               '41 9 * * 1')   job="audit" ;;
@@ -126,24 +126,6 @@ jobs:
         # datos mal interpretados.
         run: python3 -m unittest discover -s tests -t . -q
 
-      - name: Revisar radar del canal de difusión
-        # A radar failure never prevents the established sales ingestion.
-        continue-on-error: true
-        env:
-          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
-          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
-        run: python3 run_radar.py
-
-      - name: Leer comunicaciones oficiales de Mercado Libre
-        continue-on-error: true
-        env:
-          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
-          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
-          GMAIL_RADAR_CLIENT_ID: ${{ secrets.GMAIL_RADAR_CLIENT_ID }}
-          GMAIL_RADAR_CLIENT_SECRET: ${{ secrets.GMAIL_RADAR_CLIENT_SECRET }}
-          GMAIL_RADAR_REFRESH_TOKEN: ${{ secrets.GMAIL_RADAR_REFRESH_TOKEN }}
-        run: python3 run_email.py
-
       - name: Sincronizar
         if: steps.plan.outputs.job != 'radar' && steps.plan.outputs.job != 'audience'
         id: run
@@ -166,6 +148,24 @@ jobs:
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit $code
+
+      - name: Revisar radar del canal de difusión
+        # A radar failure never prevents the established sales ingestion.
+        continue-on-error: true
+        env:
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: python3 run_radar.py
+
+      - name: Leer comunicaciones oficiales de Mercado Libre
+        continue-on-error: true
+        env:
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+          GMAIL_RADAR_CLIENT_ID: ${{ secrets.GMAIL_RADAR_CLIENT_ID }}
+          GMAIL_RADAR_CLIENT_SECRET: ${{ secrets.GMAIL_RADAR_CLIENT_SECRET }}
+          GMAIL_RADAR_REFRESH_TOKEN: ${{ secrets.GMAIL_RADAR_REFRESH_TOKEN }}
+        run: python3 run_email.py
 
       - name: Actualizar detalle de audiencia de 180 días
         if: steps.plan.outputs.job == 'audience' || steps.plan.outputs.job == 'audit'

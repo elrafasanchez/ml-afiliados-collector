@@ -13,6 +13,10 @@ intentó leer ese texto como una clave nueva y el archivo dejó de ser válido.
 from __future__ import annotations
 
 import re
+import os
+import subprocess
+import textwrap
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -149,6 +153,21 @@ class StructureTest(unittest.TestCase):
                         secreto, readme,
                         f"{workflow.name} usa {secreto} pero el README no lo explica",
                     )
+
+    def test_every_frequent_wakeup_collects_sales(self):
+        text = WORKFLOW.read_text()
+        plan = text.split('      - name: Elegir el trabajo según el disparador', 1)[1].split('      - name:', 1)[0]
+        script = textwrap.dedent(plan.split('        run: |\n', 1)[1])
+        for schedule in ['7,37 * * * *', '17,27,47,57 * * * *']:
+            with self.subTest(schedule=schedule), tempfile.NamedTemporaryFile() as output:
+                env = dict(os.environ, EVENT='schedule', SCHEDULE=schedule, IN_JOB='', IN_START='', IN_END='', GITHUB_OUTPUT=output.name)
+                subprocess.run(['bash', '-c', script], env=env, check=True, capture_output=True)
+                self.assertIn('job=today', Path(output.name).read_text())
+
+    def test_sales_precede_optional_work(self):
+        text = WORKFLOW.read_text()
+        self.assertLess(text.index('      - name: Sincronizar'), text.index('      - name: Revisar radar'))
+        self.assertLess(text.index('      - name: Sincronizar'), text.index('      - name: Leer comunicaciones'))
 
     def test_schedules_match_the_cases_that_handle_them(self):
         # Si un cron cambia y el `case` no, ese horario caería en el trabajo por
