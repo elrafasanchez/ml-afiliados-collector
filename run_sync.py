@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 
 from mlaf.config import load_settings
 from mlaf.errors import (
@@ -62,6 +62,21 @@ def resolve_span(arguments: argparse.Namespace) -> tuple[date, date]:
     return start, end
 
 
+def report_failure(settings, job: str, started_at: str, code: str) -> None:
+    """Only fixed codes travel; never source exceptions, cookies, or raw HTML."""
+    if settings.dry_run:
+        return
+    from urllib.parse import urlsplit, urlunsplit
+    parsed = urlsplit(settings.ingest_url)
+    endpoint = urlunsplit((parsed.scheme, parsed.netloc, "/api/mercadolibre/sync-health", "", ""))
+    try:
+        DashboardIngest(endpoint, settings.ingest_token, max_attempts=1, timeout=15).publish(
+            {"job": job, "startedAt": started_at, "code": code}
+        )
+    except Exception:
+        log("failure_report_unavailable", code=code)
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = parse_arguments(argv)
 
@@ -73,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     log("collector_started", job=arguments.job, **settings.redacted)
 
+    started_at = datetime.now(timezone.utc).isoformat()
     source = MercadoLibreSource(settings.cookie, min_interval=settings.request_interval)
     collector = Collector(source)
 
@@ -89,15 +105,19 @@ def main(argv: list[str] | None = None) -> int:
             result = collector.run_audit(start, end)
     except AuthenticationError as error:
         log("authentication_failed", error=str(error), action="renovar ML_SESSION_COOKIE")
+        report_failure(settings, arguments.job, started_at, "AUTH_EXPIRED")
         return EXIT_AUTH
     except TransientSourceError as error:
         log("source_unavailable", error=str(error))
+        report_failure(settings, arguments.job, started_at, "SOURCE_UNAVAILABLE")
         return EXIT_TRANSIENT
     except (SchemaError, ValidationError) as error:
         log("data_rejected", error=str(error))
+        report_failure(settings, arguments.job, started_at, "DATA_REJECTED")
         return EXIT_DATA
     except CollectorError as error:
         log("collection_failed", error=str(error))
+        report_failure(settings, arguments.job, started_at, "COLLECTION_FAILED")
         return EXIT_DATA
 
     payload = result.as_payload()
@@ -116,6 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not result.days and arguments.job != "recent":
         log("nothing_collected", note="no se publica un lote vacío")
+        report_failure(settings, arguments.job, started_at, "DATA_REJECTED")
         return EXIT_DATA
 
     if settings.dry_run:

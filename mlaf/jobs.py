@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from typing import Any
 
-from .errors import CollectorError, ValidationError
+from .errors import AuthenticationError, CollectorError, ValidationError
 from .logging_setup import log
 from .normalize import (
     DailyMetrics,
@@ -255,6 +255,8 @@ class Collector:
             day = today - timedelta(days=offset)
             try:
                 result.days.append(self.read_day(day))
+            except AuthenticationError:
+                raise
             except CollectorError as error:
                 # Un día que falla no debe tumbar la reconciliación de los otros.
                 result.warnings.append(f"{day.isoformat()}: {error}")
@@ -275,6 +277,8 @@ class Collector:
             try:
                 result.days.append(self.read_day(day))
                 log("day_collected", date=day.isoformat())
+            except AuthenticationError:
+                raise
             except CollectorError as error:
                 result.warnings.append(f"{day.isoformat()}: {error}")
                 log("day_failed", date=day.isoformat(), error=str(error))
