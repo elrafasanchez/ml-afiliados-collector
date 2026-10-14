@@ -12,7 +12,7 @@
 
 El recolector comunica fallos anteriores a la ingesta al endpoint protegido `/api/mercadolibre/sync-health`. Envía únicamente códigos y tiempos; nunca excepciones de la fuente ni HTML. El informe es best-effort, un intento, 15 segundos; no altera datos de ventas. Una sesión caducada interrumpe también recent/backfill: antes podía quedar ocultada como una advertencia por día.
 
-El sitio calcula alertas por silencio tras 45 minutos sin confirmar Hoy o el mes; refresca la salud junto con los datos. En igualdad de corte fuente, el resolvedor conserva la confirmación más reciente. No cambia el cálculo de ventas, comisiones, rallys ni bonos.
+El sitio calcula alertas por silencio tras 45 minutos sin confirmar Hoy o el mes; refresca la salud junto con los datos. En igualdad de corte fuente, el resolvedor conserva la confirmación más reciente. No cambia el cálculo de ventas, comisiones, rallys ni bonos. La gráfica ahora renueva su serie de 180 días con el refresco de cada minuto; antes solo utilizaba la serie del montaje inicial.
 
 El sitio aloja herramientas privadas MCP `mercadolibre_sync_status` y `ensure_mercadolibre_sync`, restringidas al propietario. El supervisor requiere el secreto `GITHUB_SYNC_TOKEN`: token fino limitado a `elrafasanchez/ml-afiliados-collector`, permiso Actions de lectura y escritura (Metadata lectura es implícito). No necesita el cookie de Mercado Libre fuera de GitHub.
 
@@ -25,6 +25,12 @@ Una comprobación recupera si Hoy o el mes llevan más de 45 minutos sin confirm
 3. Verificar con `ensure_mercadolibre_sync` y lectura posterior de `mercadolibre_sync_status` que el permiso sirve y que la ingesta se confirma. Una llamada manual demuestra acceso, no cadencia.
 4. Leer `get_site.automations` y reutilizar una existente si cubre esto. Solo con acceso verificado crear UNA tarea Sites cada 30 minutos, America/Hermosillo. Debe comprobar y recuperar; no republicar el sitio ni enviar correos. Avisar cuando hay sesión caducada, permiso rechazado o circuito abierto; no notificar en comprobaciones sanas.
 5. Registrar al menos dos ocurrencias automáticas consecutivas y sus recepciones, más una prueba controlada de omisión/fallo fuera de producción. No declarar resuelto antes.
+
+## Verificación de publicación y lectura
+
+Recolector: fd0f030, 115 pruebas pasan. Sitio: versión 86, commit d52fe9b9f92e0dcff12df73a5338fddb971f7a2d; typecheck, 10 suites de validación y build pasan (series revalidada tras corregir el refresco).
+
+La respuesta real del navegador para `/api/mercadolibre/latest?scope=today` devolvió HTTP 200, sin caché de disco, `ml_sync_runs.id=1644`, fuente `2026-10-13T21:16:43.000Z` (14:16:43), recepción `2026-10-13T23:57:55.037Z` (16:57:55), ventas 39,525.48 y comisión 3,066.87. Coinciden con la fuente visible. El run es PARTIAL por dos unidades de diferencia entre detalle y agregado; la conciliación de comisión da diferencia 0. No se alteraron cifras para forzar coincidencia.
 
 ## Validación y límites
 
