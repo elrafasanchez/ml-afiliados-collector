@@ -149,6 +149,15 @@ jobs:
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit $code
 
+      - name: Actualizar campañas de videos
+        if: always()
+        continue-on-error: true
+        env:
+          ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: python3 run_videos.py
+
       - name: Revisar radar del canal de difusión
         # A radar failure never prevents the established sales ingestion.
         continue-on-error: true
