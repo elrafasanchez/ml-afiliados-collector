@@ -32,7 +32,20 @@ def normalize_video(campaign, media, days):
     if not isinstance(media.get('id'), str) or not isinstance(media.get('views'), int) or media['views'] < 0:
         raise SchemaError('Identidad o vistas de video inválidas.')
     updated = source_time(media.get('last_sync_time'))
-    linked = source_time(media.get('linked_date'))
+    if media.get('linked_date'):
+        linked = source_time(media['linked_date'])
+    else:
+        # Event campaigns have no linked product/date. Their video creation
+        # timestamp is the start displayed by ML (e.g. Eliot: Oct 24–Nov 23).
+        created = media.get('create_time')
+        if isinstance(created, bool) or not isinstance(created, (int, float)):
+            raise SchemaError('Video sin inicio de monetización verificable.')
+        try:
+            linked = datetime.fromtimestamp(created / 1000, timezone.utc)
+        except (ValueError, OverflowError, OSError) as exc:
+            raise SchemaError('Inicio de monetización inválido.') from exc
+        if linked.year < 2020 or linked > updated:
+            raise SchemaError('Inicio de monetización fuera de rango.')
     products = media.get('linked_products') or []
     return {
         'id': media['id'], 'campaignId': campaign['id_campaign'],

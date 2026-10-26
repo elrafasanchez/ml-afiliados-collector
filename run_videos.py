@@ -21,7 +21,7 @@ def main():
         if not settings.dry_run:
             try: writer.publish({'failure': code})
             except Exception: pass
-        print(code)
+        print(f'{code}: {type(exc).__name__}')
         return 2 if code == 'SESSION_EXPIRED' else 1
     return 0
 

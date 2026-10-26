@@ -13,6 +13,15 @@ class VideosTest(unittest.TestCase):
   self.assertEqual(v['sourceAt'],'2026-10-19T16:04:49Z')
  def test_hermosillo_month_boundary(self):
   self.assertEqual(normalize_video(C,{**V,'last_sync_time':'2026-11-01 02:00:00'},30)['sourceMonth'],'2026-10')
+ def test_event_campaign_without_linked_product_date(self):
+  v=normalize_video(C,{**V,'linked_date':None,'create_time':1792877826000,'last_sync_time':'2026-10-26 15:10:08','linked_products':[],'earnings':43.7},30)
+  self.assertEqual(v['linkedDate'],'2026-10-24')
+  self.assertEqual(v['monetizationEnd'],'2026-11-23')
+  self.assertEqual(v['earningsCents'],4370)
+ def test_no_date_must_not_invent_start(self):
+  with self.assertRaises(SchemaError):normalize_video(C,{**V,'linked_date':None},30)
+ def test_linked_date_takes_precedence(self):
+  self.assertEqual(normalize_video(C,{**V,'create_time':1792877826000},30)['linkedDate'],'2026-10-17')
  def test_invalid_amount_never_zero(self):
   for value in [None,'NaN',-1]:
    with self.assertRaises(SchemaError):cents(value)
