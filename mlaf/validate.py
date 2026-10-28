@@ -161,6 +161,24 @@ def validate_sales(
         raise ValidationError("El detalle de ventas no superó la validación: " + " ".join(problems))
 
 
+# Match the dashboard classification: exclude only explicit non-effective
+# statuses. Unknown/pending and zero-valued rows are preserved for comparison.
+NON_EFFECTIVE_STATUSES = {
+    "CANCELLED", "CANCELED", "CANCELADA", "CANCELADO", "RETURNED", "REFUNDED",
+    "DEVUELTA", "DEVUELTO", "REJECTED", "RECHAZADA", "RECHAZADO",
+    "NOT_EFFECTIVE", "NON_EFFECTIVE", "NO_EFECTIVA", "NO_EFECTIVO",
+}
+
+
+def is_estimated_sale(sale: SaleRecord) -> bool:
+    import re
+    import unicodedata
+    normalized = ''.join(c for c in unicodedata.normalize('NFD', sale.status or '')
+                         if unicodedata.category(c) != 'Mn')
+    normalized = re.sub(r'[\s-]+', '_', normalized.strip().upper())
+    return normalized not in NON_EFFECTIVE_STATUSES
+
+
 def reconcile_sales_against_daily(
     sales: list[SaleRecord],
     metrics: DailyMetrics,
@@ -171,11 +189,14 @@ def reconcile_sales_against_daily(
     que hay que **registrar e investigar**, no una razón para descartar el día ni
     para escalar los valores hasta que cuadren.
     """
-    detail_units = sum(sale.sale_units for sale in sales)
+    estimated = [sale for sale in sales if is_estimated_sale(sale)]
+    detail_units = sum(sale.sale_units for sale in estimated)
     detail_commission = sum(
-        (sale.commission_value for sale in sales), start=Decimal("0")
+        (sale.commission_value for sale in estimated), start=Decimal("0")
     )
     return {
+        "non_effective_units": Decimal(sum(sale.sale_units for sale in sales if not is_estimated_sale(sale))),
+        "non_effective_records": Decimal(len(sales) - len(estimated)),
         "units_difference": Decimal(detail_units - metrics.estimated_products),
         "commission_difference": (detail_commission - metrics.total_commission).quantize(
             Decimal("0.01")

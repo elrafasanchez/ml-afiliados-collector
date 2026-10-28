@@ -160,3 +160,28 @@ class ReconciliationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class EstimatedReconciliationTest(unittest.TestCase):
+    def test_non_effective_rows_do_not_inflate_units_and_are_preserved(self):
+        from dataclasses import replace
+        original = normalize_sales(load('sales_page.json')['item_list'])
+        daily = normalize_daily_metrics(load('kpis_2026_09_08.json'), '2026-09-08')
+        daily = replace(daily, estimated_products=2,
+                        total_commission=sum(s.commission_value for s in original))
+        rejected = [replace(original[0], sale_id=f'cancel-{i}', status=status,
+                            sale_units=3, commission_value=Decimal('99'))
+                    for i, status in enumerate(['CANCELLED', 'canceled', 'NO EFECTIVA', 'rejected', 'refunded'])]
+        rows = original + rejected
+        gaps = reconcile_sales_against_daily(rows, daily)
+        self.assertEqual(gaps['units_difference'], 0)
+        self.assertEqual(gaps['commission_difference'], 0)
+        self.assertEqual(gaps['non_effective_units'], 15)
+        self.assertEqual(gaps['non_effective_records'], 5)
+        self.assertEqual(len(rows), 7)
+
+    def test_unknown_and_zero_amount_are_not_assumed_canceled(self):
+        from dataclasses import replace
+        from mlaf.validate import is_estimated_sale
+        sale = normalize_sales(load('sales_page.json')['item_list'])[0]
+        for status in (None, 'NEW_SOURCE_STATUS', 'IN_REVIEW', 'EN REVISIÓN', 'PAID'):
+            self.assertTrue(is_estimated_sale(replace(sale, status=status, sale_value=Decimal(0), commission_value=Decimal(0))))

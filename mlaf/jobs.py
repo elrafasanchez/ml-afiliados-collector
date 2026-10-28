@@ -215,6 +215,8 @@ class Collector:
             "dateKey": today.isoformat(),
             "unitsDifference": float(gaps["units_difference"]),
             "commissionDifference": float(gaps["commission_difference"]),
+            "nonEffectiveUnits": int(gaps["non_effective_units"]),
+            "nonEffectiveRecords": int(gaps["non_effective_records"]),
             "productRollupProducts": len(sample.products),
             "productRollupDeclared": sample.declared_total,
             "productRollupComplete": sample.complete,

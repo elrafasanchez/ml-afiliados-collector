@@ -26,7 +26,8 @@ def main():
         code = 'SESSION_EXPIRED' if isinstance(exc, AuthenticationError) else 'FINANCE_SYNC_FAILED'
         if not settings.dry_run:
             try:
-                writer.publish({'failure': {'code': code, 'message': 'No se pudo actualizar el saldo oficial; se conserva el último dato válido.'},
+                writer.publish({'payments': None, 'nextPayment': None, 'incentives': None,
+                                'paymentsFailure': code, 'incentivesFailure': code,
                                 'observedAt': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')})
             except Exception:
                 pass

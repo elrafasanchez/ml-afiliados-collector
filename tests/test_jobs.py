@@ -311,3 +311,15 @@ class HistoricalDetailRevisionTest(unittest.TestCase):
             Collector(source).run_backfill(date(2026, 9, 1), date(2026, 9, 9))
         with self.assertRaises(TransientSourceError):
             Collector(source).run_recent(now=NOW)
+
+class CanceledSalesRetentionTest(unittest.TestCase):
+    def test_today_keeps_canceled_row_but_reconciles_estimated_units_only(self):
+        raw = kpis('sales_page.json')['item_list']
+        raw = raw + [{**raw[0], 'id': 'canceled-only', 'status': 'CANCELLED',
+                      'saleUnits': 5, 'saleValue': 0, 'commissionValue': 0}]
+        result = Collector(FakeSource(sales=raw)).run_today(now=NOW)
+        self.assertEqual(len(result.sales), 3)
+        self.assertEqual(len(result.as_payload()['sales']), 3)
+        self.assertEqual(result.reconciliation['unitsDifference'], 2 - 57)
+        self.assertEqual(result.reconciliation['nonEffectiveUnits'], 5)
+        self.assertEqual(result.reconciliation['nonEffectiveRecords'], 1)
