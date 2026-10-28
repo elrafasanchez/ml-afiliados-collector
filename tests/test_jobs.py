@@ -186,7 +186,7 @@ class RecentJobTest(unittest.TestCase):
     def test_reads_one_request_per_day(self):
         source = FakeSource()
         result = Collector(source).run_recent(days_back=7, now=NOW)
-        self.assertEqual(len(source.dashboard_calls), 7)
+        self.assertEqual(len(source.dashboard_calls), 8)
         self.assertEqual(len(result.days), 7)
 
     def test_one_failing_day_does_not_discard_the_others(self):
@@ -199,7 +199,7 @@ class RecentJobTest(unittest.TestCase):
 
 class BackfillJobTest(unittest.TestCase):
     def test_skips_days_already_stored(self):
-        source = FakeSource()
+        source = FakeSource(sales=[])
         known = {"2026-09-06", "2026-09-07"}
         result = Collector(source).run_backfill(
             date(2026, 9, 5), date(2026, 9, 8), known_days=known
@@ -209,7 +209,7 @@ class BackfillJobTest(unittest.TestCase):
         self.assertEqual(len(source.dashboard_calls), 1, "no se relee lo ya guardado")
 
     def test_walks_every_calendar_date_in_the_span(self):
-        source = FakeSource()
+        source = FakeSource(sales=[])
         result = Collector(source).run_backfill(date(2026, 9, 1), date(2026, 9, 8))
         self.assertEqual(len(result.days), 7)
 
@@ -263,3 +263,51 @@ class SingleDayLookupTest(unittest.TestCase):
         result = Collector(source).run_backfill(date(2026,9,8), date(2026,9,9))
         self.assertIsNone(result.sales_range)
         self.assertEqual(source.sales_calls, [])
+
+class HistoricalDetailRevisionTest(unittest.TestCase):
+    def test_recent_refreshes_week_detail_and_previous_natural_month(self):
+        source = FakeSource()
+        result = Collector(source).run_recent(now=NOW)
+        self.assertEqual(source.sales_calls, [(date(2026, 9, 2), date(2026, 9, 9))])
+        self.assertEqual(result.sales_range, source.sales_calls[0])
+        self.assertEqual(result.month_range, (date(2026, 8, 1), date(2026, 9, 1)))
+        self.assertEqual(result.as_payload()['monthRange'], {
+            'start': '2026-08-01', 'endExclusive': '2026-09-01'})
+        self.assertEqual(len(result.sales), 2)
+
+    def test_recent_budget_rejects_unbounded_day_count_before_requests(self):
+        from mlaf.errors import ValidationError
+        for count in (0, 8, 180):
+            source = FakeSource()
+            with self.assertRaises(ValidationError):
+                Collector(source).run_recent(days_back=count, now=NOW)
+            self.assertEqual(source.dashboard_calls, [])
+            self.assertEqual(source.sales_calls, [])
+
+    def test_recent_previous_month_crosses_year_boundary(self):
+        source = FakeSource(sales=[])
+        now = datetime(2027, 1, 1, 1, tzinfo=timezone(timedelta(hours=-7)))
+        result = Collector(source).run_recent(now=now)
+        self.assertEqual(result.month_range, (date(2026, 12, 1), date(2027, 1, 1)))
+
+    def test_multiday_backfill_carries_detail_not_just_aggregates(self):
+        source = FakeSource()
+        result = Collector(source).run_backfill(date(2026, 9, 1), date(2026, 9, 9))
+        self.assertEqual(source.sales_calls, [(date(2026, 9, 1), date(2026, 9, 9))])
+        self.assertEqual(len(result.as_payload()['sales']), 2)
+
+    def test_audit_preserves_aggregate_only_budget(self):
+        source = FakeSource(sales=[])
+        result = Collector(source).run_audit(date(2026, 9, 1), date(2026, 9, 9))
+        self.assertEqual(source.sales_calls, [])
+        self.assertNotIn('salesRange', result.as_payload())
+
+    def test_detail_failure_does_not_return_replacement_payload(self):
+        source = FakeSource()
+        def fail(*args, **kwargs):
+            raise TransientSourceError('temporary pagination failure')
+        source.fetch_all_sales = fail
+        with self.assertRaises(TransientSourceError):
+            Collector(source).run_backfill(date(2026, 9, 1), date(2026, 9, 9))
+        with self.assertRaises(TransientSourceError):
+            Collector(source).run_recent(now=NOW)

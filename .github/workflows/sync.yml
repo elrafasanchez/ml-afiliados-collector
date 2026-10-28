@@ -158,6 +158,15 @@ jobs:
           ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
         run: python3 run_videos.py
 
+      - name: Actualizar pagos oficiales
+        if: always() && (steps.plan.outputs.job == 'recent' || steps.plan.outputs.job == 'audit' || github.event_name == 'workflow_dispatch' || github.event.schedule == '7,37 * * * *')
+        continue-on-error: true
+        env:
+          ML_SESSION_COOKIE: ${{ secrets.ML_SESSION_COOKIE }}
+          ML_INGEST_URL: ${{ secrets.ML_INGEST_URL }}
+          ML_INGEST_TOKEN: ${{ secrets.ML_INGEST_TOKEN }}
+        run: python3 run_finance.py
+
       - name: Revisar radar del canal de difusión
         # A radar failure never prevents the established sales ingestion.
         continue-on-error: true

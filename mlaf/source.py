@@ -137,6 +137,8 @@ class MercadoLibreSource:
                 break
             page += 1
 
+        if page > max_pages:
+            raise SchemaError("El detalle transaccional excedió el límite de páginas; no se publica un rango parcial.")
         if total is not None and len(collected) != total:
             raise SchemaError(
                 f"El detalle transaccional devolvió {len(collected)} filas "

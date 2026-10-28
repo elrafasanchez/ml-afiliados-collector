@@ -39,9 +39,9 @@ No usa navegador, ni AppleScript, ni lectura del DOM.
 | Trabajo | Cuándo | Coste | Para qué |
 |---|---|---|---|
 | `today` | cada 30 min | ~4 peticiones | día en curso, mes vigente y detalle del día |
-| `recent` | cada 6 horas | 7 peticiones | relee la última semana por si la fuente revisó cifras |
+| `recent` | cada 6 horas | 8 documentos + páginas de ventas | relee hasta 7 días, su detalle y el agregado del mes anterior |
 | `audit` | lunes | ~180 peticiones | auditoría completa y reconciliación |
-| `backfill` | a mano | 1 por día vacío | rellena huecos del histórico |
+| `backfill` | a mano | 1 por día vacío + páginas de ventas | rellena huecos y actualiza el detalle completo del rango |
 
 La separación es deliberada: releer 180 días cada media hora costaría 180
 peticiones por ejecución sin aportar nada, porque los días cerrados casi nunca
@@ -238,3 +238,28 @@ exported to GitHub Actions. For continuous server-side monitoring, configure
 `https://www.googleapis.com/auth/gmail.readonly`. `run_email.py` never modifies
 email and never verifies coupons based on email content. Missing credentials
 leave this step visibly disconnected rather than faking ingestion.
+
+### Revisiones de históricos y límites del detalle
+
+`recent` admite de 1 a 7 días. Cada ejecución renueva sus transacciones y el
+agregado del mes anterior; `today` renueva el mes vigente. `backfill` también
+actualiza los productos de rangos de varios días. La auditoría semanal mantiene
+su presupuesto de agregados: no descarga 180 días de transacciones.
+
+La paginación conserva el intervalo mínimo entre peticiones, los reintentos
+acotados y un techo de 200 páginas de 50 filas. Si no termina o no coincide con
+el total declarado, la ejecución falla antes de publicar: nunca se reemplaza
+un rango válido por un detalle truncado. Un rango demasiado grande debe
+consultarse en períodos menores.
+
+### Saldo e incentivos oficiales
+
+`python3 run_finance.py` lee el HTML visible de pagos e incentivos usando la
+misma sesión del recolector. Se ejecuta con `recent`, `audit`, ejecuciones
+manuales y los horarios existentes de los minutos 7 y 37. No agrega otro
+planificador. Los componentes se publican independientemente; si cambia el
+formato o caduca la sesión, se informa un código fijo y se conserva el último
+dato válido. La observación no se presenta como corte de Mercado Libre: los
+pagos no incluyen un corte verificable y los incentivos conservan su fecha
+publicada. El saldo oficial y el próximo pago se guardan por separado incluso
+si Mercado Libre presenta una diferencia de redondeo.

@@ -5,9 +5,9 @@ hora costaría 180 peticiones por ejecución sin aportar nada: los días cerrado
 casi nunca cambian. El reparto es:
 
     today     cada 30 min   ~3 peticiones   día en curso + mes vigente + detalle
-    recent    cada 6 horas   7 peticiones   relee la última semana por revisiones
+    recent    cada 6 horas   8 + páginas   semana y mes anterior por revisiones
     audit     semanal      ~180 peticiones  auditoría completa y reconciliación
-    backfill  a demanda     1 por día vacío rellena huecos del histórico
+    backfill  a demanda     días + páginas rellena huecos y detalle histórico
 
 Cada trabajo es idempotente: se identifica cada día por su fecha natural y cada
 venta por su identificador de Mercado Libre, así que repetir una ejecución
@@ -17,7 +17,7 @@ actualiza en lugar de duplicar.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from .errors import AuthenticationError, CollectorError, ValidationError
@@ -246,10 +246,16 @@ class Collector:
         return result
 
     def run_recent(self, *, days_back: int = 7, now: datetime | None = None) -> CollectionResult:
-        """Relee los últimos días para capturar revisiones de la fuente."""
+        """Relee hasta siete días, su detalle y el mes cerrado bajo revisión.
+
+        El mes vigente se relee en `today`. Aquí se renueva el anterior, cuyo
+        importe puede cambiar por cancelaciones antes del pago. Se publica en
+        el mismo contrato mensual que utiliza `today`, con su rango original.
+        """
+        if not 1 <= days_back <= 7:
+            raise ValidationError("La revisión reciente admite entre 1 y 7 días.")
         today = today_in_hermosillo(now)
         result = CollectionResult(job="recent", started_at=utc_now_iso())
-        from datetime import timedelta
 
         for offset in range(days_back):
             day = today - timedelta(days=offset)
@@ -261,11 +267,23 @@ class Collector:
                 # Un día que falla no debe tumbar la reconciliación de los otros.
                 result.warnings.append(f"{day.isoformat()}: {error}")
                 log("day_failed", date=day.isoformat(), error=str(error))
+        # Only a fully fetched and validated transaction range is published.
+        # A transient pagination error aborts this batch; it never replaces the
+        # last valid range with a partial/empty response.
+        start, end = today - timedelta(days=days_back - 1), today + timedelta(days=1)
+        result.sales = self.read_sales(start, end)
+        result.sales_range = (start, end)
+        previous_month_day = today.replace(day=1) - timedelta(days=1)
+        previous_start = previous_month_day.replace(day=1)
+        previous_end = today.replace(day=1)
+        result.month_aggregate = self.read_range_aggregate(previous_start, previous_end, today=today)
+        result.month_range = (previous_start, previous_end)
         result.requests_made = self._requests
         return result
 
     def run_backfill(
-        self, start: date, end_exclusive: date, *, known_days: set[str] | None = None
+        self, start: date, end_exclusive: date, *, known_days: set[str] | None = None,
+        collect_detail: bool = True,
     ) -> CollectionResult:
         """Rellena días del histórico, saltando los que ya están almacenados."""
         result = CollectionResult(job="backfill", started_at=utc_now_iso())
@@ -282,9 +300,10 @@ class Collector:
             except CollectorError as error:
                 result.warnings.append(f"{day.isoformat()}: {error}")
                 log("day_failed", date=day.isoformat(), error=str(error))
-        # Single-day lookups also persist real transaction detail.
-        # Bulk audits keep their existing request budget.
-        if (end_exclusive - start).days == 1 and result.days:
+        # User-requested ranges need the same real detail as one-day queries.
+        # fetch_all_sales is throttled and capped; incomplete pagination raises
+        # instead of publishing a partial replacement. Audits opt out explicitly.
+        if collect_detail and result.days:
             result.sales = self.read_sales(start, end_exclusive)
             result.sales_range = (start, end_exclusive)
         result.requests_made = self._requests
@@ -296,7 +315,7 @@ class Collector:
         No ajusta los días para forzar el cuadre. Informa la diferencia para que
         se investigue, que es la única respuesta honesta ante una discrepancia.
         """
-        result = self.run_backfill(start, end_exclusive)
+        result = self.run_backfill(start, end_exclusive, collect_detail=False)
         result.job = "audit"
 
         aggregate = self.read_range_aggregate(start, end_exclusive)
