@@ -248,3 +248,18 @@ class FilterFormatTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class SingleDayLookupTest(unittest.TestCase):
+    def test_one_day_fetches_and_declares_transaction_range(self):
+        source = FakeSource(sales=[])
+        start, end = date(2026, 9, 8), date(2026, 9, 9)
+        result = Collector(source).run_backfill(start, end)
+        self.assertEqual(source.sales_calls, [(start, end)])
+        self.assertEqual(result.sales_range, (start, end))
+        self.assertEqual(result.as_payload()['salesRange']['start'], '2026-09-08')
+
+    def test_missing_day_never_publishes_empty_sales_replacement(self):
+        source = FakeSource(failures={'2026-09-08': TransientSourceError('502')})
+        result = Collector(source).run_backfill(date(2026,9,8), date(2026,9,9))
+        self.assertIsNone(result.sales_range)
+        self.assertEqual(source.sales_calls, [])

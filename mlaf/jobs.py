@@ -282,6 +282,11 @@ class Collector:
             except CollectorError as error:
                 result.warnings.append(f"{day.isoformat()}: {error}")
                 log("day_failed", date=day.isoformat(), error=str(error))
+        # Single-day lookups also persist real transaction detail.
+        # Bulk audits keep their existing request budget.
+        if (end_exclusive - start).days == 1 and result.days:
+            result.sales = self.read_sales(start, end_exclusive)
+            result.sales_range = (start, end_exclusive)
         result.requests_made = self._requests
         return result
 
